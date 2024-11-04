@@ -4,11 +4,12 @@ import threading
 from datetime import datetime, timedelta
 import pygame
 import pandas as pd
-import random
-import math
+import requests
+from dotenv import load_dotenv
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
-from dotenv import load_dotenv
+import random
+import math
 
 # Загружаем API-ключи из файла .env
 load_dotenv()
@@ -19,19 +20,26 @@ GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 if not GEMINI_API_KEY or not GOOGLE_API_KEY:
     raise ValueError("Один или оба API-ключа не найдены! Проверьте файл .env.")
 
-# Функция для отправки данных на Gemini API (оставлена пустой для текущей задачи)
-def send_data_to_gemini(data):
-    pass
+# Загрузка и обработка данных из датасетов
+dataset_1 = pd.read_csv(r'C:\Users\User\PycharmProjects\ctstracker\Датасет #1')
+dataset_2 = pd.read_csv(r'C:\Users\User\PycharmProjects\ctstracker\Датасет 2')
+dataset_3 = pd.read_csv(r'C:\Users\User\PycharmProjects\ctstracker\Датасет 3')
+dataset_4 = pd.read_csv(r'C:\Users\User\PycharmProjects\ctstracker\Датасет 4')
 
-# Генерируем случайное количество остановок от 3 до 8
-num_stops = random.randint(3, 8)
+# Преобразуем время прибытия и отправления в datetime и вычисляем travel_time
+dataset_1['arrival_time'] = pd.to_datetime(dataset_1['arrival_time'], format='%H:%M:%S')
+dataset_1['departure_time'] = pd.to_datetime(dataset_1['departure_time'], format='%H:%M:%S')
+dataset_1['travel_time'] = (dataset_1['departure_time'] - dataset_1['arrival_time']).dt.total_seconds()
 
-# Создаем DataFrame со случайным временем между остановками (в диапазоне от 5 до 20 секунд)
-data = {'bus_stop': [str(i + 1) for i in range(num_stops)],
-        'travel_time': [random.randint(5, 20) for _ in range(num_stops)]}
-average_travel_times = pd.DataFrame(data).set_index('bus_stop')['travel_time']
+# Преобразование для сопоставления bus_stop и stop_id
+dataset_1['bus_stop'] = dataset_1['bus_stop'].astype(str)
+dataset_2['stop_id'] = dataset_2['stop_id'].astype(str)
+dataset_1 = dataset_1.merge(dataset_2, how='left', left_on='bus_stop', right_on='stop_id')
 
-# Убеждаемся, что bus_stops упорядочены
+# Рассчитываем среднее время прибытия для каждой остановки
+average_travel_times = dataset_1.groupby('bus_stop')['travel_time'].mean()
+
+# Генерируем список остановок
 bus_stops = average_travel_times.index.tolist()
 
 # Создаем прогноз прибытия на основе среднего времени
@@ -92,24 +100,25 @@ def show_data_in_pygame():
     GREY = (169, 169, 169)
     DARK_GREEN = (34, 139, 34)
 
-    # Загрузка и уменьшение изображений
+    # Загрузка и увеличение изображений
     bus_image = pygame.image.load('bus.png')
-    bus_image = pygame.transform.scale(bus_image, (40, 20))  # Уменьшенная картинка автобуса
+    bus_image = pygame.transform.scale(bus_image, (80, 40))
     stop_image = pygame.image.load('bus_stop.png')
-    stop_image = pygame.transform.scale(stop_image, (20, 20))  # Уменьшенная картинка остановки
+    stop_image = pygame.transform.scale(stop_image, (40, 40))
 
     # Генерация координат для формы треугольника, квадрата или пятиугольника
     base_x, base_y = screen_width // 2, screen_height // 3
     stop_positions = {}
-    if num_stops == 3:
+    num_stops = len(bus_stops)
+    if num_stops <= 3:
         # Треугольная форма
         stop_positions = {
             bus_stops[0]: (base_x, base_y),
             bus_stops[1]: (base_x + 200, base_y + 300),
             bus_stops[2]: (base_x - 200, base_y + 300)
         }
-    elif num_stops in [4, 5]:
-        # Квадратная форма с дополнительной остановкой в центре, если 5 остановок
+    elif num_stops == 4 or num_stops == 5:
+        # Квадратная форма
         stop_positions = {
             bus_stops[0]: (base_x - 200, base_y),
             bus_stops[1]: (base_x + 200, base_y),
@@ -118,8 +127,8 @@ def show_data_in_pygame():
         }
         if num_stops == 5:
             stop_positions[bus_stops[4]] = (base_x, base_y + 150)
-    elif num_stops in [6, 7, 8]:
-        # Пятиугольная форма (если 6-8, добавляем дополнительные остановки по окружности)
+    else:
+        # Пятиугольная форма
         radius = 300
         angle_increment = 360 / num_stops
         for i, stop in enumerate(bus_stops):
@@ -165,13 +174,12 @@ def show_data_in_pygame():
                 # Проверка нажатия на остановку
                 mouse_pos = pygame.mouse.get_pos()
                 for stop, pos in stop_positions.items():
-                    stop_rect = pygame.Rect(pos[0] - 10, pos[1] - 10, 20, 20)
+                    stop_rect = pygame.Rect(pos[0] - 20, pos[1] - 20, 40, 40)
                     if stop_rect.collidepoint(mouse_pos):
-                        # Рассчитываем время до прибытия на остановку
                         stop_index = bus_stops.index(stop)
                         current_time_sec = (pygame.time.get_ticks() - start_time) / 1000
                         time_remaining = cumulative_times[stop_index] - current_time_sec
-                        time_remaining = max(0, int(time_remaining))  # Убираем отрицательные значения
+                        time_remaining = max(0, int(time_remaining))
                         show_stop_info(stop, time_remaining)
 
         # Очистка экрана
